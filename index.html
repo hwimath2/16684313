@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>휘매쓰 연산 챌린지!</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background-color: #f0f0f0;
+      margin: 0;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+    }
+    #game-container {
+      background-color: white;
+      padding: 20px;
+      border-radius: 10px;
+      box-shadow: 0 0 10px rgba(0,0,0,0.1);
+      text-align: center;
+    }
+    h1 { color: #4a4a4a; }
+    button {
+      background-color: #4CAF50;
+      border: none;
+      color: white;
+      padding: 15px 32px;
+      font-size: 16px;
+      margin: 4px 2px;
+      cursor: pointer;
+      border-radius: 5px;
+    }
+    input[type="text"] {
+      padding: 10px;
+      font-size: 16px;
+      width: 80%;
+      margin-bottom: 10px;
+    }
+    #energy-bar {
+      width: 100%;
+      height: 20px;
+      background-color: #ddd;
+      border-radius: 10px;
+      margin-bottom: 20px;
+    }
+    #energy-fill {
+      height: 100%;
+      width: 100%;
+      background-color: #4CAF50;
+      border-radius: 10px;
+      transition: width 0.1s linear;
+    }
+    #question, #score, #chances, #total-time {
+      margin-bottom: 20px;
+    }
+    #answer-buttons {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+    .hidden { display: none; }
+    #result-screen { font-size: 1.2em; margin-bottom: 20px; }
+  </style>
+</head>
+<body>
+  <div id="game-container">
+    <h1>휘매쓰 연산 챌린지!</h1>
+    <!-- 시작 화면: 이름 입력 및 게임시작 -->
+    <div id="start-screen">
+      <h2>이름을 입력하세요</h2>
+      <input type="text" id="playerName" placeholder="이름을 입력하세요" />
+      <br>
+      <button onclick="startGameWithName()">게임시작</button>
+    </div>
+    
+    <!-- 게임 화면 -->
+    <div id="game-screen" class="hidden">
+      <div id="energy-bar"><div id="energy-fill"></div></div>
+      <div id="question"></div>
+      <div id="answer-buttons">
+        <button onclick="checkAnswer(0)"></button>
+        <button onclick="checkAnswer(1)"></button>
+        <button onclick="checkAnswer(2)"></button>
+        <button onclick="checkAnswer(3)"></button>
+      </div>
+      <br>
+      <!-- '다음문제' 버튼: 답 선택 후 또는 시간초과 시 표시 -->
+      <button id="next-question-btn" class="hidden" onclick="nextQuestion()">다음문제</button>
+      <div id="score">점수: 0</div>
+      <div id="chances">남은 기회: 3</div>
+      <div id="total-time">총 게임 시간: 00:00</div>
+    </div>
+    
+    <!-- 결과 화면: 게임 종료 후 최종 결과와 데이터 전송 -->
+    <div id="result-screen" class="hidden">
+      <h2>게임 종료!</h2>
+      <div id="final-score"></div>
+      <div id="final-time"></div>
+      <button onclick="restartGame()">다시 시작</button>
+      <br><br>
+      <button onclick="sendData()">전송하기</button>
+      <div id="response"></div>
+    </div>
+  </div>
+  
+  <script>
+    // 전역 변수들
+    let currentDifficulty;
+    let score = 0;
+    let chances = 3;
+    let timerInterval;
+    let energyInterval;
+    let currentAnswer;
+    let roundCount = 0;
+    let gameStartTime;
+    let gameElapsedTime = 0;
+    let playerName = "";
+    
+    // 난이도 설정 (여기서는 기본 "medium" 난이도를 사용)
+    const difficulties = {
+      veryHard: { time: 20, points: 20 },
+      hard: { time: 30, points: 15 },
+      medium: { time: 40, points: 13 },
+      easy: { time: Infinity, points: 10 }
+    };
+    
+    // 시작 화면에서 이름 입력 후 게임 시작
+    function startGameWithName() {
+      playerName = document.getElementById('playerName').value;
+      if (!playerName) {
+        alert("이름을 입력하세요!");
+        return;
+      }
+      // 기본 난이도 "medium"으로 게임 시작
+      startGame("medium");
+    }
+    
+    function startGame(difficulty) {
+      currentDifficulty = difficulty;
+      document.getElementById('start-screen').classList.add('hidden');
+      document.getElementById('result-screen').classList.add('hidden');
+      document.getElementById('game-screen').classList.remove('hidden');
+      resetGame();
+      nextQuestion();
+      gameStartTime = Date.now();
+      updateTotalTime();
+    }
+    
+    function resetGame() {
+      score = 0;
+      chances = 3;
+      roundCount = 0;
+      updateScore();
+      updateChances();
+    }
+    
+    function nextQuestion() {
+      // 다음문제 버튼 숨기고, 정답 버튼 활성화
+      document.getElementById('next-question-btn').classList.add('hidden');
+      let buttons = document.getElementById('answer-buttons').getElementsByTagName('button');
+      for (let i = 0; i < buttons.length; i++) {
+        buttons[i].disabled = false;
+      }
+      clearInterval(energyInterval);
+      roundCount++;
+      let numbers = Array.from({ length: 4 }, () => Math.floor(Math.random() * 90) + 10);
+      let max = Math.max(...numbers);
+      let min = Math.min(...numbers);
+      currentAnswer = max + min;
+      let questionText = `가장 큰 수와 가장 작은 수의 합을 구하세요. ${numbers.join(', ')}`;
+      document.getElementById('question').textContent = questionText;
+      let answerOptions = [currentAnswer];
+      while (answerOptions.length < 4) {
+        let wrongAnswer = currentAnswer + Math.floor(Math.random() * 20) - 10;
+        if (wrongAnswer !== currentAnswer && !answerOptions.includes(wrongAnswer)) {
+          answerOptions.push(wrongAnswer);
+        }
+      }
+      answerOptions = answerOptions.sort(() => Math.random() - 0.5);
+      for (let i = 0; i < buttons.length; i++) {
+        buttons[i].textContent = answerOptions[i];
+      }
+      startEnergyBar();
+    }
+    
+    function startEnergyBar() {
+      let timeLimit = difficulties[currentDifficulty].time;
+      if (timeLimit === Infinity) return;
+      let energyFill = document.getElementById('energy-fill');
+      energyFill.style.width = '100%';
+      let startTime = Date.now();
+      energyInterval = setInterval(() => {
+        let elapsedTime = Date.now() - startTime;
+        let remainingPercentage = 100 - (elapsedTime / (timeLimit * 1000) * 100);
+        energyFill.style.width = `${remainingPercentage}%`;
+        if (remainingPercentage <= 0) {
+          clearInterval(energyInterval);
+          chances--;
+          updateChances();
+          alert(`시간 초과! 정답은 ${currentAnswer}입니다.`);
+          // 정답 버튼 비활성화
+          let buttons = document.getElementById('answer-buttons').getElementsByTagName('button');
+          for (let i = 0; i < buttons.length; i++) {
+            buttons[i].disabled = true;
+          }
+          // 다음문제 버튼 표시
+          document.getElementById('next-question-btn').classList.remove('hidden');
+        }
+      }, 100);
+    }
+    
+    // 답을 선택했을 때: 정답 체크 후 "다음문제" 버튼을 표시
+    function checkAnswer(index) {
+      clearInterval(energyInterval);
+      let buttons = document.getElementById('answer-buttons').getElementsByTagName('button');
+      let selectedAnswer = parseInt(buttons[index].textContent);
+      // 모든 버튼 비활성화
+      for (let i = 0; i < buttons.length; i++) {
+        buttons[i].disabled = true;
+      }
+      if (selectedAnswer === currentAnswer) {
+        score += difficulties[currentDifficulty].points;
+        updateScore();
+      } else {
+        chances--;
+        updateChances();
+        alert(`틀렸습니다. 정답은 ${currentAnswer}입니다.`);
+      }
+      // 다음문제 버튼 표시
+      document.getElementById('next-question-btn').classList.remove('hidden');
+    }
+    
+    function updateScore() {
+      document.getElementById('score').textContent = `점수: ${score}`;
+    }
+    
+    function updateChances() {
+      document.getElementById('chances').textContent = `남은 기회: ${chances}`;
+    }
+    
+    function updateTotalTime() {
+      timerInterval = setInterval(() => {
+        let elapsedSeconds = Math.floor((Date.now() - gameStartTime) / 1000);
+        let minutes = Math.floor(elapsedSeconds / 60);
+        let seconds = elapsedSeconds % 60;
+        document.getElementById('total-time').textContent = `총 게임 시간: ${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+      }, 1000);
+    }
+    
+    function endGame() {
+      clearInterval(timerInterval);
+      clearInterval(energyInterval);
+      gameElapsedTime = Math.floor((Date.now() - gameStartTime) / 1000);
+      document.getElementById('game-screen').classList.add('hidden');
+      document.getElementById('result-screen').classList.remove('hidden');
+      document.getElementById('final-score').textContent = `최종 점수: ${score}점`;
+      document.getElementById('final-time').textContent = `총 게임 시간: ${gameElapsedTime}초`;
+    }
+    
+    function restartGame() {
+      document.getElementById('result-screen').classList.add('hidden');
+      document.getElementById('start-screen').classList.remove('hidden');
+    }
+    
+    // 서버 데이터 전송 함수 (제공된 코드를 async/await 문법으로 수정)
+    async function saveData(game, name, score, elapsedTime) {
+      const FUNCTION_URL = "https://us-central1-record-f420d.cloudfunctions.net/report";
+      const requestData = {
+          game,
+          name,
+          score: parseInt(score, 10),
+          elapsedTime: parseInt(elapsedTime, 10)
+      };
+      try {
+          const response = await fetch(FUNCTION_URL, {
+              method: 'POST',
+              headers: {
+                  'Content-Type': 'application/json'
+              },
+              body: JSON.stringify(requestData)
+          });
+          const responseData = await response.json();
+          if (response.ok) {
+              document.getElementById('response').innerText = `성공: ${JSON.stringify(responseData, null, 2)}`;
+          } else {
+              document.getElementById('response').innerText = `오류: ${JSON.stringify(responseData, null, 2)}`;
+          }
+      } catch (error) {
+          console.error('요청 실패:', error);
+          document.getElementById('response').innerText = `네트워크 오류: ${error.message}`;
+      }
+    }
+    
+    // "전송하기" 버튼 클릭 시 호출
+    function sendData() {
+      saveData('game', playerName, score, gameElapsedTime);
+    }
+  </script>
+</body>
+</html>
